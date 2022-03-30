@@ -199,10 +199,15 @@ import java.util.HashMap;
      */
     public MediaDescription build() {
       try {
-        // rtpmap attribute is mandatory in RTSP (RFC2326 Section C.1.3).
-        checkState(attributes.containsKey(ATTR_RTPMAP));
-        RtpMapAttribute rtpMapAttribute =
-            RtpMapAttribute.parse(castNonNull(attributes.get(ATTR_RTPMAP)));
+        RtpMapAttribute rtpMapAttribute;
+        // RFC2326 C.1.3 rtpmap attribute is mandatory for dynamic payload only.
+        if (isPayloadTypeDynamic(payloadType)) {
+          checkState(attributes.containsKey(ATTR_RTPMAP));
+          rtpMapAttribute = RtpMapAttribute.parse(castNonNull(attributes.get(ATTR_RTPMAP)));
+        } else {
+          checkState(STATIC_RTPMAP_ATTR.containsKey(payloadType));
+          rtpMapAttribute = castNonNull(STATIC_RTPMAP_ATTR.get(payloadType));
+        }
         return new MediaDescription(this, ImmutableMap.copyOf(attributes), rtpMapAttribute);
       } catch (ParserException e) {
         throw new IllegalStateException(e);
@@ -221,6 +226,13 @@ import java.util.HashMap;
   public static final String MEDIA_TYPE_VIDEO = "video";
   /** Default RTP/AVP profile. */
   public static final String RTP_AVP_PROFILE = "RTP/AVP";
+  /** Default RTPMAP Attributes for static payload type (Table 2 RFC 1890) */
+  public static final HashMap<Integer, RtpMapAttribute> STATIC_RTPMAP_ATTR =
+      new HashMap<Integer, RtpMapAttribute>() {
+        {
+          put(33, new RtpMapAttribute(33, "MP2T", 90000, -1));
+        }
+      };
 
   /** The {@link MediaType}. */
   @MediaType public final String mediaType;
@@ -325,5 +337,17 @@ import java.util.HashMap;
       formatParametersBuilder.put(parameterPair[0], parameterPair[1]);
     }
     return formatParametersBuilder.buildOrThrow();
+  }
+
+  // Internal method
+
+  /**
+   * Determines whether the payload type is dynamic or not.
+   *
+   * @param payloadType the assigned RTP payload type.
+   * @return true if the payload type is dynamic, otherwise it sends false.
+   */
+  private static boolean isPayloadTypeDynamic(int payloadType) {
+    return 96 <= payloadType && payloadType <= 127;
   }
 }

@@ -17,19 +17,28 @@
 package androidx.media3.exoplayer.rtsp;
 
 import static androidx.media3.common.util.Assertions.checkNotNull;
+import static androidx.media3.common.util.Util.castNonNull;
+import static androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES;
 
 import android.os.SystemClock;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
+import androidx.media3.common.Format;
+import androidx.media3.common.MimeTypes;
 import androidx.media3.common.util.ParsableByteArray;
+import androidx.media3.common.util.TimestampAdjuster;
 import androidx.media3.exoplayer.rtsp.reader.DefaultRtpPayloadReaderFactory;
 import androidx.media3.exoplayer.rtsp.reader.RtpPayloadReader;
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory;
+import androidx.media3.extractor.ts.TsPayloadReader;
+import androidx.media3.extractor.ts.TsExtractor;
 import androidx.media3.extractor.Extractor;
 import androidx.media3.extractor.ExtractorInput;
 import androidx.media3.extractor.ExtractorOutput;
 import androidx.media3.extractor.PositionHolder;
 import androidx.media3.extractor.SeekMap;
+import androidx.media3.extractor.TrackOutput;
 import java.io.IOException;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
@@ -43,6 +52,10 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   private final Object lock;
   private final RtpPacketReorderingQueue reorderingQueue;
 
+  private final TsPayloadReader.Factory defaultFactory;
+  private final TsExtractor tsExtractor;
+
+  private @MonotonicNonNull TrackOutput trackOutput;
   private @MonotonicNonNull ExtractorOutput output;
   private boolean firstPacketRead;
   private volatile long firstTimestamp;
@@ -57,11 +70,26 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   @GuardedBy("lock")
   private long playbackStartTimeUs;
 
+  private boolean isTsPacket;
+
   public RtpExtractor(RtpPayloadFormat payloadFormat, int trackId) {
     this.trackId = trackId;
+    isTsPacket = payloadFormat.format.sampleMimeType == MimeTypes.VIDEO_MP2T;
 
-    payloadReader =
-        checkNotNull(new DefaultRtpPayloadReaderFactory().createPayloadReader(payloadFormat));
+    if (isTsPacket) {
+      payloadReader = null;
+      defaultFactory = new DefaultTsPayloadReaderFactory(FLAG_ALLOW_NON_IDR_KEYFRAMES);
+      tsExtractor =
+          new TsExtractor(
+              TsExtractor.MODE_RTP,
+              new TimestampAdjuster(payloadFormat.clockRate),
+              defaultFactory);
+    } else {
+      payloadReader =
+          checkNotNull(new DefaultRtpPayloadReaderFactory().createPayloadReader(payloadFormat));
+      defaultFactory = null;
+      tsExtractor = null;
+    }
     rtpPacketScratchBuffer = new ParsableByteArray(RtpPacket.MAX_SIZE);
     rtpPacketDataBuffer = new ParsableByteArray();
     lock = new Object();
@@ -112,7 +140,22 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
   @Override
   public void init(ExtractorOutput output) {
-    payloadReader.createTracks(output, trackId);
+    if (isTsPacket) {
+      // setting a default track for TS streams.
+      // TODO: Add logic for selecting media type.
+      trackOutput = output.track(trackId, C.TRACK_TYPE_METADATA);
+      Format format =
+          new Format.Builder()
+              .setContainerMimeType(MimeTypes.VIDEO_MP2T)
+              .setSampleMimeType(MimeTypes.VIDEO_H264)
+              .setWidth(352)
+              .setHeight(288)
+              .build();
+      castNonNull(trackOutput).format(format);
+      tsExtractor.init(output);
+    } else {
+      payloadReader.createTracks(output, trackId);
+    }
     output.endTracks();
     // RTP does not embed duration or seek info.
     output.seekMap(new SeekMap.Unseekable(C.TIME_UNSET));
@@ -122,6 +165,14 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   @Override
   public int read(ExtractorInput input, PositionHolder seekPosition) throws IOException {
     checkNotNull(output); // Asserts init is called.
+
+    if (isTsPacket) {
+      int bytesToSkip = RtpPacket.getHeaderLength(input);
+      if (bytesToSkip > 0) {
+        input.skip(bytesToSkip);
+      }
+      return tsExtractor.read(input, seekPosition);
+    }
 
     // Reads one RTP packet at a time.
     int bytesRead = input.read(rtpPacketScratchBuffer.getData(), 0, RtpPacket.MAX_SIZE);
@@ -189,6 +240,9 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     synchronized (lock) {
       this.nextRtpTimestamp = nextRtpTimestamp;
       this.playbackStartTimeUs = playbackStartTimeUs;
+    }
+    if (isTsPacket) {
+      tsExtractor.seek(nextRtpTimestamp, playbackStartTimeUs);
     }
   }
 

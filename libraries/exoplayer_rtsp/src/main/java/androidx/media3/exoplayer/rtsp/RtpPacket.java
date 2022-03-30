@@ -24,7 +24,9 @@ import androidx.media3.common.C;
 import androidx.media3.common.util.ParsableByteArray;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
+import androidx.media3.extractor.ExtractorInput;
 import com.google.common.math.IntMath;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /**
@@ -131,6 +133,7 @@ public final class RtpPacket {
 
   public static final int MAX_SIZE = 65507;
   public static final int MIN_HEADER_SIZE = 12;
+  public static final int MAX_HEADER_SIZE = 76;
   public static final int MIN_SEQUENCE_NUMBER = 0;
   public static final int MAX_SEQUENCE_NUMBER = 0xFFFF;
   public static final int CSRC_SIZE = 4;
@@ -174,6 +177,31 @@ public final class RtpPacket {
   public final byte[] csrc;
 
   public final byte[] payloadData;
+
+  /**
+   * Calculates the length of RTP Header.
+   *
+   * @param input ExtractorInput that contains the RTP packet data.
+   * @return Length of RTP header.
+   */
+  public static int getHeaderLength(ExtractorInput input) throws IOException {
+    if (input.getLength() < MIN_HEADER_SIZE) {
+      return 0;
+    }
+
+    byte[] packet = new byte[MAX_HEADER_SIZE];
+    input.peek(packet, 0, MAX_HEADER_SIZE);
+    input.resetPeekPosition();
+
+    int version = (packet[0] & 0xC0) >> 6;
+    if (RTP_VERSION != version) {
+      return 0;
+    }
+
+    // get crcCount and add crc length to header length.
+    int csrcLen = CSRC_SIZE * (packet[0] & 0x0F);
+    return MIN_HEADER_SIZE + csrcLen;
+  }
 
   /**
    * Creates an {@link RtpPacket} from a {@link ParsableByteArray}.

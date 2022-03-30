@@ -62,13 +62,13 @@ public final class TsExtractor implements Extractor {
   public static final ExtractorsFactory FACTORY = () -> new Extractor[] {new TsExtractor()};
 
   /**
-   * Modes for the extractor. One of {@link #MODE_MULTI_PMT}, {@link #MODE_SINGLE_PMT} or {@link
-   * #MODE_HLS}.
+   * Modes for the extractor. One of {@link #MODE_MULTI_PMT}, {@link #MODE_SINGLE_PMT}, {@link
+   * #MODE_HLS} or {@link #MODE_RTP}.
    */
   @Documented
   @Retention(RetentionPolicy.SOURCE)
   @Target(TYPE_USE)
-  @IntDef({MODE_MULTI_PMT, MODE_SINGLE_PMT, MODE_HLS})
+  @IntDef({MODE_MULTI_PMT, MODE_SINGLE_PMT, MODE_HLS, MODE_RTP})
   public @interface Mode {}
 
   /** Behave as defined in ISO/IEC 13818-1. */
@@ -80,6 +80,10 @@ public final class TsExtractor implements Extractor {
    * continuity counters.
    */
   public static final int MODE_HLS = 2;
+  /**
+   * Enable single PMT mode, map {@link TrackOutput}s by their trackId (instead of PID).
+   */
+  public static final int MODE_RTP = 3;
 
   public static final int TS_PACKET_SIZE = 188;
   public static final int DEFAULT_TIMESTAMP_SEARCH_BYTES = 600 * TS_PACKET_SIZE;
@@ -108,6 +112,7 @@ public final class TsExtractor implements Extractor {
   public static final int TS_SYNC_BYTE = 0x47; // First byte of each TS packet.
 
   private static final int TS_PAT_PID = 0;
+  private static final int TS_PMT_PID = 0x0100;
   private static final int MAX_PID_PLUS_ONE = 0x2000;
 
   private static final long AC3_FORMAT_IDENTIFIER = 0x41432d33;
@@ -154,7 +159,7 @@ public final class TsExtractor implements Extractor {
 
   /**
    * @param mode Mode for the extractor. One of {@link #MODE_MULTI_PMT}, {@link #MODE_SINGLE_PMT}
-   *     and {@link #MODE_HLS}.
+   *     {@link #MODE_HLS} and {@link #MODE_RTP}.
    * @param defaultTsPayloadReaderFlags A combination of {@link DefaultTsPayloadReaderFactory}
    *     {@code FLAG_*} values that control the behavior of the payload readers.
    * @param timestampSearchBytes The number of bytes searched from a given position in the stream to
@@ -176,8 +181,8 @@ public final class TsExtractor implements Extractor {
   }
 
   /**
-   * @param mode Mode for the extractor. One of {@link #MODE_MULTI_PMT}, {@link #MODE_SINGLE_PMT}
-   *     and {@link #MODE_HLS}.
+   * @param mode Mode for the extractor. One of {@link #MODE_MULTI_PMT}, {@link #MODE_SINGLE_PMT},
+   *     {@link #MODE_HLS} and (@link #MODE_RTP}.
    * @param timestampAdjuster A timestamp adjuster for offsetting and scaling sample timestamps.
    * @param payloadReaderFactory Factory for injecting a custom set of payload readers.
    */
@@ -190,7 +195,7 @@ public final class TsExtractor implements Extractor {
 
   /**
    * @param mode Mode for the extractor. One of {@link #MODE_MULTI_PMT}, {@link #MODE_SINGLE_PMT}
-   *     and {@link #MODE_HLS}.
+   *     {@link #MODE_HLS} and {@link #MODE_RTP}.
    * @param timestampAdjuster A timestamp adjuster for offsetting and scaling sample timestamps.
    * @param payloadReaderFactory Factory for injecting a custom set of payload readers.
    * @param timestampSearchBytes The number of bytes searched from a given position in the stream to
@@ -651,7 +656,16 @@ public final class TsExtractor implements Extractor {
         }
         remainingEntriesLength -= esInfoLength + 5;
 
-        int trackId = mode == MODE_HLS ? streamType : elementaryPid;
+        int trackId;
+        if (mode == MODE_HLS) {
+          trackId = streamType;
+        } else if (mode == MODE_RTP) {
+          // Map PMT entry to trackIds used by RTP. Since PMT_PID starts with 0x100,
+          // we subtract TS_PMT_PID from elementaryPid to get the trackId.
+          trackId = elementaryPid - TS_PMT_PID;
+        } else {
+          trackId = elementaryPid;
+        }
         if (trackIds.get(trackId)) {
           continue;
         }
