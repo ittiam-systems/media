@@ -655,40 +655,18 @@ import java.util.Locale;
   }
 
   /** Generates the stts (decoding time to sample) box. */
-  public static ByteBuffer stts(List<Long> durationsVu) {
+  public static ByteBuffer stts(Long durationsVu,int writtenSampleSize) {
     ByteBuffer contents =
-        ByteBuffer.allocate(durationsVu.size() * 8 + Mp4Utils.MAX_FIXED_LEAF_BOX_SIZE);
+        ByteBuffer.allocate(Long.BYTES + Mp4Utils.MAX_FIXED_LEAF_BOX_SIZE);
+
+    int sampleDelta = writtenSampleSize == 0 ? 0 : durationsVu.intValue()/writtenSampleSize;
 
     contents.putInt(0x0); // version and flags.
 
-    // We will know total entry count only after processing all the sample durations, so put in a
-    // placeholder for total entry count and store its index.
-    int totalEntryCountIndex = contents.position();
-    contents.putInt(0x0); // entry_count.
+    contents.putInt(1); // entry_count.
+    contents.putInt(writtenSampleSize);
+    contents.putInt(sampleDelta);
 
-    int totalEntryCount = 0;
-    long lastDurationVu = -1L;
-    int lastSampleCountIndex = -1;
-
-    // Note that the framework MediaMuxer adjust time deltas within plus-minus 100 us, so that
-    // samples have repeating duration values. It saves few entries in the table.
-    for (int i = 0; i < durationsVu.size(); i++) {
-      long durationVu = durationsVu.get(i);
-      if (lastDurationVu != durationVu) {
-        lastDurationVu = durationVu;
-        lastSampleCountIndex = contents.position();
-
-        // sample_count; this will be updated instead of adding a new entry if the next sample has
-        // the same duration.
-        contents.putInt(1);
-        contents.putInt((int) durationVu); // sample_delta.
-        totalEntryCount++;
-      } else {
-        contents.putInt(lastSampleCountIndex, contents.getInt(lastSampleCountIndex) + 1);
-      }
-    }
-
-    contents.putInt(totalEntryCountIndex, totalEntryCount);
 
     contents.flip();
     return BoxUtils.wrapIntoBox("stts", contents);

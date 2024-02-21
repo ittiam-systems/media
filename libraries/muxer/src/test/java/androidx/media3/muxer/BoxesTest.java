@@ -442,7 +442,12 @@ public class BoxesTest {
   public void createSttsBox_withSingleSampleDuration_matchesExpected() throws IOException {
     ImmutableList<Long> sampleDurations = ImmutableList.of(500L);
 
-    ByteBuffer sttsBox = Boxes.stts(sampleDurations);
+     Long totalDuration = 0L;
+     for (int i = 0; i < sampleDurations.size(); i++) {
+       totalDuration += sampleDurations.get(i);
+     }
+     ByteBuffer sttsBox = Boxes.stts(totalDuration,sampleDurations.size());
+
 
     DumpableMp4Box dumpableBox = new DumpableMp4Box(sttsBox);
     DumpFileAsserts.assertOutput(
@@ -455,7 +460,12 @@ public class BoxesTest {
   public void createSttsBox_withAllDifferentSampleDurations_matchesExpected() throws IOException {
     ImmutableList<Long> sampleDurations = ImmutableList.of(1_000L, 2_000L, 3_000L, 5_000L);
 
-    ByteBuffer sttsBox = Boxes.stts(sampleDurations);
+     Long totalDuration = 0L;
+     for (int i = 0; i < sampleDurations.size(); i++) {
+       totalDuration += sampleDurations.get(i);
+     }
+     ByteBuffer sttsBox = Boxes.stts(totalDuration,sampleDurations.size());
+
 
     DumpableMp4Box dumpableBox = new DumpableMp4Box(sttsBox);
     DumpFileAsserts.assertOutput(
@@ -469,7 +479,12 @@ public class BoxesTest {
       throws IOException {
     ImmutableList<Long> sampleDurations = ImmutableList.of(1_000L, 2_000L, 2_000L, 2_000L);
 
-    ByteBuffer sttsBox = Boxes.stts(sampleDurations);
+     Long totalDuration = 0L;
+     for (int i = 0; i < sampleDurations.size(); i++) {
+       totalDuration += sampleDurations.get(i);
+     }
+     ByteBuffer sttsBox = Boxes.stts(totalDuration,sampleDurations.size());
+
 
     DumpableMp4Box dumpableBox = new DumpableMp4Box(sttsBox);
     DumpFileAsserts.assertOutput(
