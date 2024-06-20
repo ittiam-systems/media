@@ -96,7 +96,7 @@ import org.checkerframework.checker.nullness.qual.PolyNull;
           Mp4Utils.usFromVu(trackDurationInTrackUnitsVu, track.videoUnitTimebase());
 
       @C.TrackType int trackType = MimeTypes.getTrackType(format.sampleMimeType);
-      ByteBuffer stts = Boxes.stts(sampleDurationsVu);
+      ByteBuffer stts = Boxes.stts(trackDurationInTrackUnitsVu,track.writtenSamples().size());
       ByteBuffer stsz = Boxes.stsz(track.writtenSamples());
       ByteBuffer stsc = Boxes.stsc(track.writtenChunkSampleCounts());
       ByteBuffer chunkOffsetBox =
